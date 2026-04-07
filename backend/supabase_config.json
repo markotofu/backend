@@ -1,0 +1,35 @@
+{
+  "project_id": "wkfbcdpsbjblsflcvcks",
+  "url": "https://wkfbcdpsbjblsflcvcks.supabase.co",
+  "auth": {
+    "enabled": true,
+    "providers": {
+      "email": true,
+      "google": false,
+      "apple": false,
+      "github": false
+    }
+  },
+  "database": {
+    "tables": [
+      "locations",
+      "profiles"
+    ]
+  },
+  "storage": {
+    "buckets": [
+      {
+        "name": "location-images",
+        "public": true,
+        "file_size_limit": 5242880,
+        "allowed_mime_types": ["image/jpeg", "image/png", "image/webp"]
+      },
+      {
+        "name": "avatars",
+        "public": true,
+        "file_size_limit": 2097152,
+        "allowed_mime_types": ["image/jpeg", "image/png", "image/webp"]
+      }
+    ]
+  }
+}

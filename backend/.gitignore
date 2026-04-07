@@ -1,0 +1,18 @@
+# Environment variables
+.env
+
+# Node modules (if using Node.js functions)
+node_modules/
+.deno/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
