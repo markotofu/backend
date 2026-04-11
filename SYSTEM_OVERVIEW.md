@@ -162,6 +162,36 @@ Valhalla base URL configuration:
 - `FlutterEXAM\lib\routing_config.dart`
 - Uses `--dart-define=VALHALLA_URL=http://...` (default: emulator `http://10.0.2.2:8002`)
 
+### How Valhalla works (in this project)
+Valhalla is a routing engine (like Google Directions, but self-hosted). In this repo it runs as a **Docker container** in `Valhalla\`.
+
+**What the Flutter app calls**
+- Health check: `GET {VALHALLA_URL}/status`
+- Routing: `POST {VALHALLA_URL}/route`
+
+**Request format used**
+In `ValhallaRoutingService.routeShortestAvoiding()` the app sends a JSON payload like:
+- `locations`: `[from, to]` (each includes `lat`, `lon`, and a `radius` for snapping to nearby roads)
+- `exclude_locations`: hazard points (traffic/incidents) turned into `{lat, lon, radius}`
+- `costing: "auto"` (driving)
+- `format: "osrm"` and `shape_format: "geojson"` to simplify parsing
+
+**Response parsing**
+Valhalla returns OSRM-style JSON where the route line is at:
+- `routes[0].geometry.coordinates = [[lon, lat], ...]`
+
+The service converts that polyline into a `List<LatLng>` that Flutter Map renders.
+
+**Alternative route (yellow)**
+The “alternative route” is **not** a different algorithm—it’s the same shortest-route request, but with `exclude_locations` set to the current hazard pins. If Valhalla can’t find a route under those constraints, the app keeps showing the original (green) route.
+
+**First run behavior (important)**
+On the first Valhalla start, the container may need to download OSM data and build routing tiles. During this phase:
+- `docker compose ps` may show the container as **Up**
+- but `/status` can return empty reply / closed connection
+
+That’s expected until tile-building finishes. See `Valhalla\README.md` for the exact commands to monitor logs.
+
 ---
 
 ## 7) Davao-only map behavior + no rotation

@@ -67,9 +67,7 @@ class AuthService {
       final response = await _supabase.auth.signUp(
         email: email,
         password: password,
-        data: {
-          'username': cleanedUsername,
-        },
+        data: {'username': cleanedUsername},
         emailRedirectTo: null, // No email confirmation redirect needed
       );
 
@@ -252,7 +250,9 @@ class AuthService {
       } else if (fullName != null && fullName.isNotEmpty) {
         finalUsername = _sanitizeUsername(fullName);
       } else {
-        finalUsername = _sanitizeUsername('user${DateTime.now().millisecondsSinceEpoch}');
+        finalUsername = _sanitizeUsername(
+          'user${DateTime.now().millisecondsSinceEpoch}',
+        );
       }
 
       await _supabase.from('accounts').upsert({
@@ -289,12 +289,16 @@ class AuthService {
       final String finalUsername;
       if (chosen != null && chosen.trim().isNotEmpty) {
         finalUsername = _sanitizeUsername(chosen);
-      } else if (email != null && email.isNotEmpty && !email.startsWith('guest_')) {
+      } else if (email != null &&
+          email.isNotEmpty &&
+          !email.startsWith('guest_')) {
         finalUsername = _sanitizeUsername(email.split('@')[0]);
       } else if (fullName != null && fullName.isNotEmpty) {
         finalUsername = _sanitizeUsername(fullName);
       } else {
-        finalUsername = _sanitizeUsername('user${DateTime.now().millisecondsSinceEpoch}');
+        finalUsername = _sanitizeUsername(
+          'user${DateTime.now().millisecondsSinceEpoch}',
+        );
       }
 
       await _supabase.from('accounts').insert({
@@ -337,7 +341,9 @@ class AuthService {
 
     // Keep auth metadata in sync (helpful for DB triggers/clients). Best-effort.
     try {
-      await _supabase.auth.updateUser(UserAttributes(data: {'username': cleaned}));
+      await _supabase.auth.updateUser(
+        UserAttributes(data: {'username': cleaned}),
+      );
     } catch (_) {
       // ignore
     }

@@ -9,6 +9,7 @@ import 'routing_config.dart';
 
 class ValhallaRoutingService {
   final String baseUrl;
+  static const int _snapRadiusMeters = 75;
 
   ValhallaRoutingService({String? baseUrl})
     : baseUrl = (baseUrl ?? RoutingConfig.valhallaBaseUrl).replaceAll(
@@ -20,9 +21,7 @@ class ValhallaRoutingService {
     final uri = Uri.parse('$baseUrl/status');
 
     try {
-      final res = await client
-          .get(uri)
-          .timeout(const Duration(seconds: 10));
+      final res = await client.get(uri).timeout(const Duration(seconds: 10));
 
       if (res.statusCode < 200 || res.statusCode >= 300) {
         throw Exception('HTTP ${res.statusCode}: ${res.body}');
@@ -47,9 +46,13 @@ class ValhallaRoutingService {
   }) async {
     final payload = {
       'locations': [
-        // Increase search radius so taps slightly off the road can still snap.
-        {'lat': from.latitude, 'lon': from.longitude, 'radius': 200},
-        {'lat': to.latitude, 'lon': to.longitude, 'radius': 200},
+        // Keep snapping tight so Valhalla does not jump to a nearby parallel road.
+        {
+          'lat': from.latitude,
+          'lon': from.longitude,
+          'radius': _snapRadiusMeters,
+        },
+        {'lat': to.latitude, 'lon': to.longitude, 'radius': _snapRadiusMeters},
       ],
       'exclude_locations': exclude
           .map((e) => e.toValhallaExcludeLocation())

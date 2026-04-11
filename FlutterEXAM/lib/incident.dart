@@ -1,4 +1,6 @@
 class Incident {
+  static const int defaultRadiusM = 20;
+
   /// Marker category used by the map UI.
   /// - 'traffic'
   /// - 'incident'
@@ -45,7 +47,7 @@ class Incident {
       return double.parse(v.toString());
     }
 
-    int toInt(dynamic v, {int fallback = 50}) {
+    int toInt(dynamic v, {int fallback = defaultRadiusM}) {
       if (v == null) return fallback;
       if (v is int) return v;
       if (v is num) return v.toInt();

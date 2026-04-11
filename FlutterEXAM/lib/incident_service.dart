@@ -41,12 +41,14 @@ class IncidentService {
             status: status,
             recordId: row['traffic_id']?.toString(),
             description: row['description']?.toString(),
-            reportedAt: DateTime.tryParse((row['reported_at'] ?? '').toString()),
+            reportedAt: DateTime.tryParse(
+              (row['reported_at'] ?? '').toString(),
+            ),
             zoneId: (zone['zone_id'] as num?)?.toInt(),
             zoneName: zone['district_name']?.toString(),
             lat: (zone['latitude'] as num).toDouble(),
             lon: (zone['longitude'] as num).toDouble(),
-            radiusM: 50,
+            radiusM: Incident.defaultRadiusM,
           ),
         );
       }
@@ -63,12 +65,14 @@ class IncidentService {
             status: (row['incident_status'] ?? 'Reported').toString(),
             recordId: row['incident_id']?.toString(),
             description: row['description']?.toString(),
-            reportedAt: DateTime.tryParse((row['reported_at'] ?? '').toString()),
+            reportedAt: DateTime.tryParse(
+              (row['reported_at'] ?? '').toString(),
+            ),
             zoneId: (zone['zone_id'] as num?)?.toInt(),
             zoneName: zone['district_name']?.toString(),
             lat: (zone['latitude'] as num).toDouble(),
             lon: (zone['longitude'] as num).toDouble(),
-            radiusM: 50,
+            radiusM: Incident.defaultRadiusM,
           ),
         );
       }
@@ -85,10 +89,12 @@ class IncidentService {
           .eq('is_active', true);
 
       return (rows as List)
-          .map((e) => Incident.fromMap({
-                ...(e as Map<String, dynamic>),
-                'category': 'incident',
-              }))
+          .map(
+            (e) => Incident.fromMap({
+              ...(e as Map<String, dynamic>),
+              'category': 'incident',
+            }),
+          )
           .toList(growable: false);
     }
   }
