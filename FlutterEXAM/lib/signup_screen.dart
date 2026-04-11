@@ -11,7 +11,7 @@ class SignUpScreen extends StatefulWidget {
 
 class _SignUpScreenState extends State<SignUpScreen> {
   final _authService = AuthService();
-  final _nameController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
@@ -23,7 +23,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -39,7 +39,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       await _authService.signUpWithEmail(
         email: _emailController.text.trim(),
         password: _passwordController.text,
-        fullName: _nameController.text.trim(),
+        username: _usernameController.text.trim(),
       );
 
       if (mounted) {
@@ -105,21 +105,26 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                   const SizedBox(height: 48),
 
-                  // Full Name Field
+                  // Username Field
                   TextFormField(
-                    controller: _nameController,
-                    keyboardType: TextInputType.name,
+                    controller: _usernameController,
+                    keyboardType: TextInputType.text,
                     decoration: InputDecoration(
-                      labelText: 'Full Name',
-                      hintText: 'John Doe',
-                      prefixIcon: const Icon(Icons.person_outline),
+                      labelText: 'Username',
+                      hintText: 'e.g. john_doe',
+                      prefixIcon: const Icon(Icons.alternate_email),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your name';
+                      final v = (value ?? '').trim();
+                      if (v.isEmpty) return 'Please enter a username';
+                      if (v.length < 3 || v.length > 30) {
+                        return 'Username must be 3–30 characters';
+                      }
+                      if (!RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(v)) {
+                        return 'Only letters, numbers, underscore (_), dot (.), and hyphen (-) are allowed';
                       }
                       return null;
                     },

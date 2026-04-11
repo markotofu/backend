@@ -1,0 +1,27 @@
+services:
+  valhalla:
+    image: ghcr.io/nilsnolde/docker-valhalla/valhalla:latest
+    container_name: valhalla_davao
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./custom_files:/custom_files
+    environment:
+      # OSM PBF source(s) (space-separated). See .env
+      - tile_urls=${TILE_URLS}
+
+      # Keep resource usage reasonable on laptops.
+      - server_threads=1
+
+      # Optional enrichments (can be disabled to speed up first build)
+      - build_admins=False
+      - build_time_zones=False
+      - build_elevation=False
+
+      # Serve the API
+      - serve_tiles=True
+
+      # Rebuild behavior
+      - force_rebuild=False
+      - use_tiles_ignore_pbf=False
+    restart: unless-stopped

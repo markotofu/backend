@@ -1,13 +1,30 @@
--- Setup for accounts table with auto-creation on user signup
--- Run this in Supabase SQL Editor
+-- Setup for accounts table (schema + RLS only)
+-- Run this in Supabase SQL Editor BEFORE 06_accounts_trigger_on_signup.sql
+
+-- Ensure enum exists (for fresh setups)
+-- Note: the trigger script inserts only auth_user_id + username, so it works even if
+-- your role column is text/enum and regardless of enum casing.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'account_role_enum'
+      AND n.nspname = 'public'
+  ) THEN
+    CREATE TYPE public.account_role_enum AS ENUM ('User', 'ADMIN', 'CTTMO');
+  END IF;
+END $$;
 
 -- Ensure accounts table exists with correct schema
 CREATE TABLE IF NOT EXISTS public.accounts (
-    id BIGSERIAL PRIMARY KEY,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    username VARCHAR(255),
-    role VARCHAR(50) DEFAULT 'USER' CHECK (role IN ('ADMIN', 'USER', 'CTTMO')),
-    auth_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE,
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
+    username TEXT,
+    role public.account_role_enum DEFAULT 'User'::public.account_role_enum NOT NULL,
+    auth_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE NOT NULL,
     isActive BOOLEAN DEFAULT true NOT NULL
 );
 
@@ -31,54 +48,8 @@ CREATE POLICY "Users can update their own account" ON public.accounts
 -- Create index for faster lookups
 CREATE INDEX IF NOT EXISTS idx_accounts_auth_user_id ON public.accounts(auth_user_id);
 
--- Function to auto-create account when user signs up
-CREATE OR REPLACE FUNCTION public.handle_new_user_account()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO public.accounts (auth_user_id, username, role, isActive)
-    VALUES (
-        NEW.id,
-        COALESCE(
-            LOWER(SPLIT_PART(NEW.email, '@', 1)),
-            'user' || EXTRACT(EPOCH FROM NOW())::TEXT
-        ),
-        'USER',
-        true
-    )
-    ON CONFLICT (auth_user_id) DO NOTHING;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create trigger to auto-create account on signup
-DROP TRIGGER IF EXISTS on_auth_user_created_account ON auth.users;
-CREATE TRIGGER on_auth_user_created_account
-    AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user_account();
-
--- Create accounts for existing users that don't have one
-INSERT INTO public.accounts (auth_user_id, username, role, isActive)
-SELECT 
-    au.id,
-    COALESCE(
-        LOWER(SPLIT_PART(au.email, '@', 1)),
-        'user' || EXTRACT(EPOCH FROM NOW())::TEXT
-    ) as username,
-    'USER' as role,
-    true as isActive
-FROM auth.users au
-WHERE NOT EXISTS (
-    SELECT 1 FROM public.accounts a WHERE a.auth_user_id = au.id
-)
-ON CONFLICT (auth_user_id) DO NOTHING;
-
--- Verify setup
-SELECT 
-    'Total auth users' as metric,
-    COUNT(*) as count
-FROM auth.users
-UNION ALL
-SELECT 
-    'Total accounts' as metric,
-    COUNT(*) as count
-FROM public.accounts;
+-- NOTE
+-- Auto-creation trigger + backfill were moved to:
+--   backend/06_accounts_trigger_on_signup.sql
+--
+-- Keep this file focused on the table + RLS policies.

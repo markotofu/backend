@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'auth_service.dart';
+import 'dashboard_page.dart';
+import 'details_page.dart';
 import 'login_screen.dart';
+import 'map_page.dart';
+import 'my_account_page.dart';
+import 'reporting_page.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,34 +17,25 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _authService = AuthService();
-  Map<String, dynamic>? _userProfile;
-  bool _isLoading = true;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadUserProfile();
-  }
+  int _selectedIndex = 0;
+  int _dashboardReloadToken = 0;
+  bool _railExtended = true;
 
-  Future<void> _loadUserProfile() async {
-    try {
-      final profile = await _authService.getUserProfile();
-      if (mounted) {
-        setState(() {
-          _userProfile = profile;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to load profile: ${e.toString()}'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
+  String get _title {
+    switch (_selectedIndex) {
+      case 0:
+        return 'Dashboard';
+      case 1:
+        return 'Map';
+      case 2:
+        return 'Reporting';
+      case 3:
+        return 'Details';
+      case 4:
+        return 'My Account';
+      default:
+        return 'App';
     }
   }
 
@@ -67,236 +63,175 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       await _authService.signOut();
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-        );
-      }
+      if (!mounted) return;
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Sign out failed: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Sign out failed: $e')));
     }
+  }
+
+  Widget _currentPage() {
+    return switch (_selectedIndex) {
+      0 => DashboardPage(reloadToken: _dashboardReloadToken),
+      1 => const MapPage(),
+      2 => const ReportingPage(),
+      3 => const DetailsPage(),
+      4 => const MyAccountPage(),
+      _ => DashboardPage(reloadToken: _dashboardReloadToken),
+    };
+  }
+
+  void _select(int index) {
+    setState(() {
+      _selectedIndex = index;
+      if (index == 0) {
+        _dashboardReloadToken++;
+      }
+    });
+  }
+
+  Drawer _drawer() {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            child: Text(
+              'Menu',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.dashboard_outlined),
+            title: const Text('Dashboard'),
+            selected: _selectedIndex == 0,
+            onTap: () {
+              Navigator.of(context).pop();
+              _select(0);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.map_outlined),
+            title: const Text('Map'),
+            selected: _selectedIndex == 1,
+            onTap: () {
+              Navigator.of(context).pop();
+              _select(1);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.campaign_outlined),
+            title: const Text('Reporting'),
+            selected: _selectedIndex == 2,
+            onTap: () {
+              Navigator.of(context).pop();
+              _select(2);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('Details'),
+            selected: _selectedIndex == 3,
+            onTap: () {
+              Navigator.of(context).pop();
+              _select(3);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: const Text('My Account'),
+            selected: _selectedIndex == 4,
+            onTap: () {
+              Navigator.of(context).pop();
+              _select(4);
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('Sign out'),
+            onTap: () {
+              Navigator.of(context).pop();
+              _signOut();
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = _authService.currentUser;
-    final isGuest =
-        _userProfile?['is_guest'] == true ||
-        currentUser?.email?.startsWith('guest_') == true;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useRail = constraints.maxWidth >= 900;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Home'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _signOut,
-            tooltip: 'Sign Out',
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadUserProfile,
-              child: ListView(
-                padding: const EdgeInsets.all(24.0),
-                children: [
-                  // Profile Card
-                  Card(
-                    elevation: 4,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Column(
-                        children: [
-                          CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Theme.of(context).primaryColor,
-                            child: Text(
-                              _getInitials(),
-                              style: const TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _userProfile?['full_name'] ?? 'User',
-                            style: Theme.of(context).textTheme.headlineSmall
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            currentUser?.email ?? 'No email',
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: Colors.grey[600]),
-                          ),
-                          const SizedBox(height: 16),
-                          if (isGuest)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.orange[100],
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.person_outline,
-                                    size: 16,
-                                    color: Colors.orange[800],
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Guest Account',
-                                    style: TextStyle(
-                                      color: Colors.orange[800],
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          if (_userProfile?['role'] != null)
-                            Container(
-                              margin: const EdgeInsets.only(top: 8),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.blue[100],
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.badge_outlined,
-                                    size: 16,
-                                    color: Colors.blue[800],
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Role: ${_userProfile!['role']}',
-                                    style: TextStyle(
-                                      color: Colors.blue[800],
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Welcome Message
-                  Card(
-                    elevation: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.all(20.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.check_circle,
-                                color: Colors.green[600],
-                                size: 28,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Authentication Successful!',
-                                  style: Theme.of(context).textTheme.titleLarge
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.green[700],
-                                      ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'You are now logged in with ${isGuest ? 'guest' : 'user'} role. This app demonstrates:',
-                            style: Theme.of(context).textTheme.bodyLarge,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildFeature('Google Sign-In (ADDU Mail)'),
-                          _buildFeature('Guest Login'),
-                          _buildFeature('Email/Password Authentication'),
-                          _buildFeature('Supabase Backend Integration'),
-                          _buildFeature('Role-based Access (user role)'),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // User ID Info
-                  Card(
-                    elevation: 1,
-                    child: ListTile(
-                      leading: const Icon(Icons.fingerprint),
-                      title: const Text('User ID'),
-                      subtitle: Text(
-                        currentUser?.id ?? 'Unknown',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ),
-                ],
+        final scaffold = Scaffold(
+          appBar: AppBar(
+            title: Text(_title),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.logout),
+                tooltip: 'Sign Out',
+                onPressed: _signOut,
               ),
-            ),
+            ],
+          ),
+          drawer: useRail ? null : _drawer(),
+          body: useRail
+              ? Row(
+                  children: [
+                    NavigationRail(
+                      extended: _railExtended,
+                      leading: IconButton(
+                        icon: Icon(
+                          _railExtended
+                              ? Icons.chevron_left
+                              : Icons.chevron_right,
+                        ),
+                        tooltip: _railExtended ? 'Collapse' : 'Expand',
+                        onPressed: () =>
+                            setState(() => _railExtended = !_railExtended),
+                      ),
+                      selectedIndex: _selectedIndex,
+                      onDestinationSelected: _select,
+                      destinations: const [
+                        NavigationRailDestination(
+                          icon: Icon(Icons.dashboard_outlined),
+                          label: Text('Dashboard'),
+                        ),
+                        NavigationRailDestination(
+                          icon: Icon(Icons.map_outlined),
+                          label: Text('Map'),
+                        ),
+                        NavigationRailDestination(
+                          icon: Icon(Icons.campaign_outlined),
+                          label: Text('Reporting'),
+                        ),
+                        NavigationRailDestination(
+                          icon: Icon(Icons.info_outline),
+                          label: Text('Details'),
+                        ),
+                        NavigationRailDestination(
+                          icon: Icon(Icons.person_outline),
+                          label: Text('My Account'),
+                        ),
+                      ],
+                    ),
+                    const VerticalDivider(width: 1),
+                    Expanded(child: _currentPage()),
+                  ],
+                )
+              : _currentPage(),
+        );
+
+        return scaffold;
+      },
     );
-  }
-
-  Widget _buildFeature(String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Icon(Icons.check, size: 20, color: Colors.green[600]),
-          const SizedBox(width: 8),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 15))),
-        ],
-      ),
-    );
-  }
-
-  String _getInitials() {
-    final fullName = _userProfile?['full_name'] as String?;
-    if (fullName == null || fullName.isEmpty) {
-      return _authService.currentUser?.email?.substring(0, 1).toUpperCase() ??
-          'U';
-    }
-
-    final parts = fullName.split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return fullName.substring(0, 1).toUpperCase();
   }
 }

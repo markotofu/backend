@@ -1,86 +1,36 @@
-# Quick Setup Guide
+# Backend Setup Guide (Supabase)
 
-## 1. Run Database Migrations
+Run these scripts in **Supabase Dashboard → SQL Editor**.
 
-Go to your Supabase SQL Editor:
-👉 https://supabase.com/dashboard/project/wkfbcdpsbjblsflcvcks/sql/new
+## 1) Accounts (required)
 
-### Step 1: Create Locations Table
-Copy the contents of `supabase/migrations/20240101_create_locations_table.sql` and run it.
+1. Run `05_setup_accounts_table.sql`
+   - Creates `public.accounts`
+   - Enables RLS + policies
 
-### Step 2: Create Profiles Table
-Copy the contents of `supabase/migrations/20240102_create_user_profiles_table.sql` and run it.
+2. Run `06_accounts_trigger_on_signup.sql`
+   - Creates trigger on `auth.users` to auto-create `public.accounts`
+   - Backfills existing users missing an account
 
-## 2. (Optional) Set Up Storage Buckets
+## 2) Reporting + pins schema (required)
 
-If you want to store location images and user avatars:
+3. Run `09_zones_traffic_incidents.sql`
+   - Creates `zones`, `traffic`, `incidents`, `traffic_log` + enums
+   - Enables RLS + policies
 
-1. Go to Storage: https://supabase.com/dashboard/project/wkfbcdpsbjblsflcvcks/storage/buckets
-2. Create bucket: `location-images` (Public)
-3. Create bucket: `avatars` (Public)
+## 3) Optional: set an account role for testing
 
-### Storage Policies
+To test incident reporting, update your account role to `ADMIN` or `CTTMO`:
 
-For each bucket, add these policies:
-
-**Allow public read:**
 ```sql
-CREATE POLICY "Public Access"
-ON storage.objects FOR SELECT
-USING ( bucket_id = 'location-images' );
+UPDATE public.accounts
+SET role = 'ADMIN'
+WHERE auth_user_id = auth.uid();
 ```
 
-**Allow authenticated users to upload:**
-```sql
-CREATE POLICY "Authenticated users can upload"
-ON storage.objects FOR INSERT
-WITH CHECK (
-  bucket_id = 'location-images' 
-  AND auth.role() = 'authenticated'
-);
-```
-
-**Allow users to delete their own files:**
-```sql
-CREATE POLICY "Users can delete own files"
-ON storage.objects FOR DELETE
-USING (
-  bucket_id = 'location-images' 
-  AND auth.uid() = owner
-);
-```
-
-## 3. Configure Authentication (Optional)
-
-Enable additional auth providers:
-https://supabase.com/dashboard/project/wkfbcdpsbjblsflcvcks/auth/providers
-
-- Google OAuth
-- Apple Sign In
-- GitHub
-- etc.
-
-## 4. Test Your Setup
-
-Use the Supabase API Explorer:
-https://supabase.com/dashboard/project/wkfbcdpsbjblsflcvcks/api
-
-## 5. Flutter Integration
-
-See `README.md` for Flutter code examples.
+Regular `User` accounts can only report traffic.
 
 ## Troubleshooting
 
-### Can't insert data?
-- Check that migrations ran successfully
-- Verify RLS policies are enabled
-- Make sure you're authenticated
-
-### Authentication not working?
-- Check that email auth is enabled in Supabase Dashboard
-- Verify your API keys are correct
-- Check if email confirmations are required
-
-### Need help?
-- Supabase Docs: https://supabase.com/docs
-- Flutter Supabase Package: https://pub.dev/packages/supabase_flutter
+- If signups don’t create `public.accounts`, run `07_fix_accounts_autocreate.sql`.
+- Avoid using `DISABLE_RLS.sql` / `QUICK_FIX_ACCOUNTS.sql` unless you’re only doing local testing.

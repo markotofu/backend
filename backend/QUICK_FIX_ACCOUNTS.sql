@@ -24,15 +24,14 @@ ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 CREATE OR REPLACE FUNCTION public.handle_new_user_account()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO public.accounts (auth_user_id, username, role, isActive)
+    INSERT INTO public.accounts (auth_user_id, username)
     VALUES (
         NEW.id,
         COALESCE(
-            LOWER(SPLIT_PART(NEW.email, '@', 1)),
+            NULLIF(NEW.raw_user_meta_data->>'username', ''),
+            LOWER(SPLIT_PART(COALESCE(NEW.email, ''), '@', 1)),
             'user' || EXTRACT(EPOCH FROM NOW())::TEXT
-        ),
-        'USER',
-        true
+        )
     )
     ON CONFLICT (auth_user_id) DO NOTHING;
     RETURN NEW;

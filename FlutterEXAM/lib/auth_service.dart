@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -32,15 +32,18 @@ class AuthService {
         password: password,
       );
 
-      // Try to ensure profile has 'user' role, but don't fail if it doesn't work
+      // Ensure accounts row exists, but NEVER overwrite username on login
       if (response.user != null) {
         try {
-          await _ensureUserRole(
+          await _createAccountIfMissing(
             response.user!.id,
             email: response.user!.email,
+            username: response.user!.userMetadata?['username'],
           );
         } catch (e) {
-          print('Could not update role on login: $e');
+          if (kDebugMode) {
+            debugPrint('Could not ensure account on login: $e');
+          }
         }
       }
 
@@ -54,32 +57,37 @@ class AuthService {
   Future<AuthResponse> signUpWithEmail({
     required String email,
     required String password,
-    String? fullName,
+    required String username,
   }) async {
     try {
+      // Store username in auth.users.raw_user_meta_data so the DB trigger can use it
+      // when creating public.accounts.
+      final cleanedUsername = _sanitizeUsername(username);
+
       final response = await _supabase.auth.signUp(
         email: email,
         password: password,
         data: {
-          'full_name': fullName ?? '',
+          'username': cleanedUsername,
         },
         emailRedirectTo: null, // No email confirmation redirect needed
       );
 
       // Note: Supabase might require email confirmation
-      // Check if user is created but not confirmed
       if (response.user != null) {
         await Future.delayed(const Duration(milliseconds: 500));
-        
-        // Try to update role and username, but don't fail if it doesn't work
+
+        // Best-effort: ensure account exists (but don't fail signup if RLS/schema blocks it)
         try {
           await _ensureUserRole(
             response.user!.id,
             email: response.user!.email,
-            fullName: fullName,
+            username: cleanedUsername,
           );
         } catch (e) {
-          print('Could not set role immediately: $e');
+          if (kDebugMode) {
+            debugPrint('Could not create/update account immediately: $e');
+          }
         }
       }
 
@@ -123,13 +131,16 @@ class AuthService {
       if (response.user != null) {
         await Future.delayed(const Duration(milliseconds: 500));
         try {
-          await _ensureUserRole(
+          await _createAccountIfMissing(
             response.user!.id,
             email: response.user!.email,
+            username: response.user!.userMetadata?['username'],
             fullName: response.user!.userMetadata?['full_name'],
           );
         } catch (e) {
-          print('Could not update account after Google login: $e');
+          if (kDebugMode) {
+            debugPrint('Could not update account after Google login: $e');
+          }
         }
       }
 
@@ -166,12 +177,15 @@ class AuthService {
       final guestEmail = 'guest_$guestId@temp.local';
       final guestPassword = 'guest_${uuid.v4()}';
 
+      final guestUsername = 'user${DateTime.now().millisecondsSinceEpoch}';
+
       // Create guest account
       final response = await _supabase.auth.signUp(
         email: guestEmail,
         password: guestPassword,
         data: {
           'full_name': 'Guest User',
+          'username': guestUsername,
           'is_guest': true,
           'guest_id': guestId,
         },
@@ -185,9 +199,12 @@ class AuthService {
             response.user!.id,
             email: guestEmail,
             fullName: 'Guest User',
+            username: guestUsername,
           );
         } catch (e) {
-          print('Could not update account after guest signup: $e');
+          if (kDebugMode) {
+            debugPrint('Could not update account after guest signup: $e');
+          }
         }
 
         // Note: Guest info is stored in user metadata
@@ -200,41 +217,94 @@ class AuthService {
     }
   }
 
-  // Ensure user has 'USER' role and username in accounts table
-  Future<void> _ensureUserRole(String userId, {String? email, String? fullName}) async {
-    try {
-      // Generate username from email or create a random one
-      String username;
-      if (email != null && !email.startsWith('guest_')) {
-        // Use email prefix as username (before @)
-        username = email.split('@')[0].toLowerCase();
-      } else if (fullName != null && fullName.isNotEmpty) {
-        // Use full name as username (remove spaces)
-        username = fullName.toLowerCase().replaceAll(' ', '');
-      } else {
-        // Generate random username for guests
-        username = 'user${DateTime.now().millisecondsSinceEpoch}';
-      }
-      
-      print('Creating account for user $userId with username: $username');
-      
-      // Insert into accounts table (not profiles)
-      // Using upsert to create if doesn't exist, or update if it does
-      // NOTE: Avoid camelCase column names in JSON payloads.
-      // In Postgres, unquoted identifiers are folded to lowercase, so a column
-      // declared as `isActive` becomes `isactive`. Sending `isActive` here causes
-      // PostgREST to error with "column does not exist" and the upsert fails.
-      final result = await _supabase.from('accounts').upsert({
-        'auth_user_id': userId, // Link to auth.users
-        'username': username,
-        'role': 'USER', // Default role (matches your CHECK constraint)
-        // Don't send isActive/isactive; rely on DB default.
-      }, onConflict: 'auth_user_id').select();
+  String _sanitizeUsername(String input) {
+    var u = input.trim().toLowerCase();
+    u = u.replaceAll(RegExp(r'[^a-z0-9_.-]+'), '_');
+    u = u.replaceAll(RegExp(r'[_\.\-]{2,}'), '_');
+    u = u.replaceAll(RegExp(r'^[_\.\-]+'), '');
+    u = u.replaceAll(RegExp(r'[_\.\-]+$'), '');
 
-      print('Account created/updated successfully: $result');
+    if (u.isEmpty) {
+      u = 'user${DateTime.now().millisecondsSinceEpoch}';
+    }
+
+    if (u.length > 30) {
+      u = u.substring(0, 30);
+    }
+
+    return u;
+  }
+
+  // Ensure user has a row in accounts table (signup flow).
+  // This MAY update username because the user just chose it.
+  Future<void> _ensureUserRole(
+    String userId, {
+    String? email,
+    String? fullName,
+    String? username,
+  }) async {
+    try {
+      String finalUsername;
+      if (username != null && username.trim().isNotEmpty) {
+        finalUsername = _sanitizeUsername(username);
+      } else if (email != null && !email.startsWith('guest_')) {
+        finalUsername = _sanitizeUsername(email.split('@')[0]);
+      } else if (fullName != null && fullName.isNotEmpty) {
+        finalUsername = _sanitizeUsername(fullName);
+      } else {
+        finalUsername = _sanitizeUsername('user${DateTime.now().millisecondsSinceEpoch}');
+      }
+
+      await _supabase.from('accounts').upsert({
+        'auth_user_id': userId,
+        'username': finalUsername,
+      }, onConflict: 'auth_user_id');
     } catch (e) {
-      // Let callers decide whether to ignore this (login) or show it (debug).
-      print('ERROR creating/updating account: $e');
+      if (kDebugMode) {
+        debugPrint('ERROR creating/updating account: $e');
+      }
+      rethrow;
+    }
+  }
+
+  // Login flow: only create the row if it does not exist.
+  // This prevents overwriting a previously-chosen username.
+  Future<void> _createAccountIfMissing(
+    String userId, {
+    String? email,
+    String? fullName,
+    dynamic username,
+  }) async {
+    try {
+      final existing = await _supabase
+          .from('accounts')
+          .select('auth_user_id')
+          .eq('auth_user_id', userId)
+          .maybeSingle();
+
+      if (existing != null) return;
+
+      final chosen = (username is String) ? username : null;
+
+      final String finalUsername;
+      if (chosen != null && chosen.trim().isNotEmpty) {
+        finalUsername = _sanitizeUsername(chosen);
+      } else if (email != null && email.isNotEmpty && !email.startsWith('guest_')) {
+        finalUsername = _sanitizeUsername(email.split('@')[0]);
+      } else if (fullName != null && fullName.isNotEmpty) {
+        finalUsername = _sanitizeUsername(fullName);
+      } else {
+        finalUsername = _sanitizeUsername('user${DateTime.now().millisecondsSinceEpoch}');
+      }
+
+      await _supabase.from('accounts').insert({
+        'auth_user_id': userId,
+        'username': finalUsername,
+      });
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('ERROR ensuring account exists: $e');
+      }
       rethrow;
     }
   }
@@ -254,6 +324,32 @@ class AuthService {
     }
   }
 
+  Future<void> updateUsername(String username) async {
+    final userId = currentUser?.id;
+    if (userId == null) throw Exception('Not signed in');
+
+    final cleaned = _sanitizeUsername(username);
+
+    await _supabase
+        .from('accounts')
+        .update({'username': cleaned})
+        .eq('auth_user_id', userId);
+
+    // Keep auth metadata in sync (helpful for DB triggers/clients). Best-effort.
+    try {
+      await _supabase.auth.updateUser(UserAttributes(data: {'username': cleaned}));
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Future<void> updatePassword(String newPassword) async {
+    final userId = currentUser?.id;
+    if (userId == null) throw Exception('Not signed in');
+
+    await _supabase.auth.updateUser(UserAttributes(password: newPassword));
+  }
+
   // Get user profile
   Future<Map<String, dynamic>?> getUserProfile() async {
     try {
@@ -261,14 +357,16 @@ class AuthService {
       if (userId == null) return null;
 
       final response = await _supabase
-          .from('accounts')  // Changed from 'profiles' to 'accounts'
+          .from('accounts')
           .select()
-          .eq('auth_user_id', userId)  // Changed from 'id' to 'auth_user_id'
-          .single();
+          .eq('auth_user_id', userId)
+          .maybeSingle();
 
       return response;
     } catch (e) {
-      print('Error fetching user account: $e');
+      if (kDebugMode) {
+        debugPrint('Error fetching user account: $e');
+      }
       return null;
     }
   }

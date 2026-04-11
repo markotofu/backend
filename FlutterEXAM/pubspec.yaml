@@ -47,6 +47,13 @@ dependencies:
   # UUID generation for guest accounts
   uuid: ^4.3.3
 
+  # Map (OpenStreetMap)
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.1
+
+  # HTTP client (Valhalla routing)
+  http: ^1.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
